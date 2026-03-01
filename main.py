@@ -1,5 +1,5 @@
 from flask import Flask, render_template, redirect, url_for
-from flask_bootstrap import Bootstrap5
+from flask_bootstrap import Bootstrap
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Integer, String, Text
@@ -9,22 +9,23 @@ from wtforms.validators import DataRequired, URL
 from flask_ckeditor import CKEditor, CKEditorField
 from datetime import date
 
-'''
-Make sure the required packages are installed: 
-Open the Terminal in PyCharm (bottom left). 
-
-On Windows type:
-python -m pip install -r requirements.txt
-
-On MacOS type:
-pip3 install -r requirements.txt
-
-This will install the packages from the requirements.txt for this project.
-'''
-
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '8BYkEfBA6O6donzWlSihBXox7C0sKR6b'
-Bootstrap5(app)
+Bootstrap(app)
+
+# CKEditor initialization
+ckeditor = CKEditor(app)
+
+
+# New Post Form
+class NewPostForm(FlaskForm):
+
+    title = StringField('Title', validators=[DataRequired()])
+    subtitle = StringField('Subtitle', validators=[DataRequired()])
+    author = StringField('Author', validators=[DataRequired()])
+    img_url = StringField('Image URL', validators=[DataRequired(), URL()])
+    body = CKEditorField('Body')
+    submit = SubmitField('Submit')
 
 # CREATE DATABASE
 class Base(DeclarativeBase):
@@ -37,7 +38,7 @@ db.init_app(app)
 # CONFIGURE TABLE
 class BlogPost(db.Model):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    title: Mapped[str] = mapped_column(String(250), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(250), unique=False, nullable=False)
     subtitle: Mapped[str] = mapped_column(String(250), nullable=False)
     date: Mapped[str] = mapped_column(String(250), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
@@ -51,21 +52,93 @@ with app.app_context():
 
 @app.route('/')
 def get_all_posts():
-    # TODO: Query the database for all the posts. Convert the data to a python list.
-    posts = []
+    # Query the database for all the posts. Convert the data to a python list.
+
+    posts = db.session.execute(db.select(BlogPost)).scalars().all()
+
     return render_template("index.html", all_posts=posts)
 
-# TODO: Add a route so that you can click on individual posts.
-@app.route('/')
+# Add a route so that you can click on individual posts.
+@app.route('/posts/<int:post_id>')
 def show_post(post_id):
-    # TODO: Retrieve a BlogPost from the database based on the post_id
-    requested_post = "Grab the post from your database"
+    # Retrieve a BlogPost from the database based on the post_id
+    requested_post = db.session.execute(db.select(BlogPost).where(BlogPost.id == post_id)).scalar()
+
     return render_template("post.html", post=requested_post)
 
 
-# TODO: add_new_post() to create a new blog post
+# Create a new blog post
+@app.route('/new-post', methods=['GET', 'POST'])
+def add_new_post():
 
-# TODO: edit_post() to change an existing blog post
+    form = NewPostForm()
+
+    is_new_post = True
+
+    if form.validate_on_submit():
+
+
+        # Get the date of the blog post creation
+        today = date.today()
+
+        formatted_date = today.strftime("%B %d, %Y")
+
+        # Create a new BlogPost object and save it into the SQLite database
+
+        new_post = BlogPost(
+            title = form.title.data,
+            subtitle = form.subtitle.data,
+            date = formatted_date,
+            body= form.body.data,
+            author = form.author.data,
+            img_url = form.img_url.data,
+        )
+
+        db.session.add(new_post)
+        db.session.commit()
+
+        return redirect(url_for('get_all_posts'))
+
+
+    return render_template("make-post.html", form=form, is_new_post=is_new_post)
+
+
+# Change an existing blog post
+
+@app.route('/edit-post/<int:post_id>', methods=['GET', 'POST'])
+def edit_post(post_id):
+    is_new_post = False
+
+    # Get the data of the existing post
+
+    selected_post = db.session.execute(db.select(BlogPost).where(BlogPost.id == post_id)).scalar()
+
+    edit_form = NewPostForm(
+        title = selected_post.title,
+        subtitle = selected_post.subtitle,
+        date = selected_post.date,
+        body = selected_post.body,
+        author = selected_post.author,
+        img_url = selected_post.img_url,
+    )
+
+    if edit_form.validate_on_submit():
+        print("Submit button Pressed")
+        selected_post.title = edit_form.title.data
+        selected_post.subtitle = edit_form.subtitle.data
+        selected_post.img_url = edit_form.img_url.data
+        selected_post.author = edit_form.author.data
+        selected_post.body = edit_form.body.data
+        db.session.commit()
+
+        return redirect(url_for('get_all_posts'))
+
+    return render_template(
+        "make-post.html",
+        form=edit_form,
+        is_new_post=is_new_post,
+        post_id=post_id)
+
 
 # TODO: delete_post() to remove a blog post from the database
 
